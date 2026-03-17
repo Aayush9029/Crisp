@@ -1,0 +1,13 @@
+.DS_Store
+build/
+build-release/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+secret_keys/
+build-release
+.local/
