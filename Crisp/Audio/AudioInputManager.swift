@@ -22,6 +22,7 @@ private func audioPropertyListenerCallback(
 final class AudioInputManager {
     struct InputDevice: Identifiable, Equatable, Sendable {
         let id: AudioDeviceID
+        let uid: String
         let name: String
     }
 
@@ -29,6 +30,9 @@ final class AudioInputManager {
     var forcedDeviceID: AudioDeviceID?
     var isPaused = false
     var isForcing = false
+
+    /// Stable UID used for persistence — AudioDeviceID is runtime-only and can change.
+    private var forcedDeviceUID: String?
 
     private let logger = Logger(subsystem: "com.aayush.crisp", category: "AudioInput")
 
@@ -46,7 +50,9 @@ final class AudioInputManager {
     func selectDevice(_ device: InputDevice) {
         logger.info("Selected: \(device.name) (\(device.id))")
         forcedDeviceID = device.id
-        UserDefaults.standard.set(Int(device.id), forKey: "forcedDeviceID")
+        forcedDeviceUID = device.uid
+        UserDefaults.standard.set(device.uid, forKey: "forcedDeviceUID")
+        UserDefaults.standard.removeObject(forKey: "forcedDeviceID")
         forceDefaultInput()
     }
 
@@ -94,20 +100,28 @@ final class AudioInputManager {
                 deviceID, &streamAddr, 0, nil, &streamSize
             ) == noErr, streamSize > 0 else { continue }
 
-            guard let name = deviceName(for: deviceID) else { continue }
-            logger.info("Input device: \(name) (\(deviceID))")
-            devices.append(InputDevice(id: deviceID, name: name))
+            guard let name = deviceName(for: deviceID),
+                  let uid = deviceUID(for: deviceID) else { continue }
+            logger.info("Input device: \(name) (\(deviceID)) UID=\(uid)")
+            devices.append(InputDevice(id: deviceID, uid: uid, name: name))
 
-            if name.lowercased().contains("built") && forcedDeviceID == nil {
+            if name.lowercased().contains("built") && forcedDeviceUID == nil {
                 forcedDeviceID = deviceID
+                forcedDeviceUID = uid
                 logger.info("Auto-selected: \(name)")
             }
         }
 
         inputDevices = devices
 
-        if let forced = forcedDeviceID, !devices.contains(where: { $0.id == forced }) {
-            logger.warning("Forced device disconnected")
+        // Resolve saved UID to current AudioDeviceID (IDs can change across sessions/reconnections)
+        if let uid = forcedDeviceUID, let match = devices.first(where: { $0.uid == uid }) {
+            if forcedDeviceID != match.id {
+                logger.info("Resolved UID \(uid) to new device ID \(match.id)")
+                forcedDeviceID = match.id
+            }
+        } else if forcedDeviceUID != nil {
+            logger.warning("Forced device disconnected (UID not found)")
             forcedDeviceID = nil
         }
 
@@ -138,11 +152,45 @@ final class AudioInputManager {
         return cfStr as String
     }
 
+    private func deviceUID(for deviceID: AudioDeviceID) -> String? {
+        var uidAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uidSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            deviceID, &uidAddr, 0, nil, &uidSize
+        ) == noErr, uidSize > 0 else { return nil }
+
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: Int(uidSize), alignment: MemoryLayout<CFString>.alignment)
+        defer { buffer.deallocate() }
+
+        guard AudioObjectGetPropertyData(
+            deviceID, &uidAddr, 0, nil, &uidSize, buffer
+        ) == noErr else { return nil }
+
+        let cfStr = Unmanaged<CFString>.fromOpaque(buffer.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+        return cfStr as String
+    }
+
     private func loadSavedDevice() {
-        let saved = UserDefaults.standard.integer(forKey: "forcedDeviceID")
-        if saved != 0 {
-            forcedDeviceID = AudioDeviceID(saved)
-            logger.info("Loaded saved device: \(saved)")
+        // Migrate from old numeric ID to stable UID
+        if let savedUID = UserDefaults.standard.string(forKey: "forcedDeviceUID") {
+            forcedDeviceUID = savedUID
+            logger.info("Loaded saved device UID: \(savedUID)")
+        } else {
+            let legacyID = UserDefaults.standard.integer(forKey: "forcedDeviceID")
+            if legacyID != 0 {
+                // Best-effort migration: resolve the old ID to a UID now
+                forcedDeviceID = AudioDeviceID(legacyID)
+                if let uid = deviceUID(for: AudioDeviceID(legacyID)) {
+                    forcedDeviceUID = uid
+                    UserDefaults.standard.set(uid, forKey: "forcedDeviceUID")
+                    UserDefaults.standard.removeObject(forKey: "forcedDeviceID")
+                    logger.info("Migrated legacy device ID \(legacyID) → UID \(uid)")
+                }
+            }
         }
     }
 
