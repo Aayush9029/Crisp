@@ -1,3 +1,11 @@
+> [!WARNING]
+> APPLE REMOVED MY APPLE ID FOR MAKING MAC APPS that they didn't agree with. Please wait a moment while I figure out new signing keys. Until then, macOS reports the downloaded app as damaged. Move the app to Applications, then run:
+>
+> ```bash
+> xattr -c /Applications/Crisp.app
+> open /Applications/Crisp.app
+> ```
+
 <p align="center">
   <img src="assets/readme/crisp-icon.png" alt="Crisp app icon" width="120" height="120">
   <h1 align="center">Crisp for macOS</h1>
