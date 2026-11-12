@@ -9,7 +9,7 @@
 
 <p align="center">
   <a aria-label="Download Latest Version" href="https://github.com/Aayush9029/Crisp/releases/latest">
-    <img alt="Download Latest Version" src="https://img.shields.io/badge/Download%20Mac%20Version-black.svg?style=for-the-badge&logo=apple">
+    <img alt="Download for Apple Silicon" src="https://img.shields.io/badge/Download%20for%20Apple%20Silicon-black.svg?style=for-the-badge&logo=apple">
   </a>
 
   <a aria-label="Support Development" href="https://github.com/sponsors/Aayush9029">
